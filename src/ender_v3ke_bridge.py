@@ -1,18 +1,47 @@
 import asyncio
-import websockets
 import json
 import logging
 import os
 import time
+from typing import Optional
+
 import requests
+import websockets
 import paho.mqtt.client as mqtt
+
+
+def load_env_file(filepath: str = ".env") -> None:
+    """Populate os.environ with key=value pairs from a simple .env file."""
+    if not os.path.exists(filepath):
+        return
+
+    try:
+        with open(filepath, "r", encoding="utf-8") as env_file:
+            for line in env_file:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                if "=" not in stripped:
+                    continue
+                key, value = stripped.split("=", 1)
+                key = key.strip()
+                if not key or key in os.environ:
+                    continue
+                os.environ[key] = value.strip().strip('"').strip("'")
+    except OSError as exc:
+        raise RuntimeError(f"Unable to read environment file {filepath}: {exc}") from exc
+
+
+load_env_file()
 
 # Configuration (can also be set via environment variables)
 MQTT_BROKER       = os.getenv("MQTT_BROKER", "192.168.1.100")
 MQTT_PORT         = int(os.getenv("MQTT_PORT", 1883))
 MQTT_TOPIC        = os.getenv("MQTT_TOPIC", "home/3dprinter/status")
-MQTT_USER         = os.getenv("MQTT_USER", "homeassistant")
-MQTT_PASS         = os.getenv("MQTT_PASS", "Dehol416!")
+MQTT_USER         = os.getenv("MQTT_USER")
+MQTT_PASS         = os.getenv("MQTT_PASS")
+MQTT_USE_TLS      = os.getenv("MQTT_USE_TLS", "false").lower() in {"1", "true", "yes"}
+MQTT_TLS_INSECURE = os.getenv("MQTT_TLS_INSECURE", "false").lower() in {"1", "true", "yes"}
 WS_URL            = os.getenv("PRINTER_WS_URL", "ws://192.168.1.53:9999/")
 PUBLISH_INTERVAL  = float(os.getenv("PUBLISH_INTERVAL", 2))
 IMAGE_URL         = "http://192.168.1.53/downloads/original/current_print_image.png"
@@ -34,6 +63,21 @@ logging.basicConfig(
     ]
 )
 
+
+def require_secret(value: Optional[str], name: str) -> str:
+    if value:
+        return value
+    logging.critical("Missing required secret %s. Populate it via environment variables or .env.", name)
+    raise SystemExit(1)
+
+
+MQTT_USER = require_secret(MQTT_USER, "MQTT_USER")
+MQTT_PASS = require_secret(MQTT_PASS, "MQTT_PASS")
+
+if PUBLISH_INTERVAL <= 0:
+    logging.warning("PUBLISH_INTERVAL must be positive. Falling back to 2 seconds.")
+    PUBLISH_INTERVAL = 2
+
 # MQTT callbacks
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
@@ -49,6 +93,11 @@ mqtt_client = mqtt.Client()
 mqtt_client.username_pw_set(MQTT_USER, MQTT_PASS)
 mqtt_client.on_connect = on_connect
 mqtt_client.on_disconnect = on_disconnect
+
+if MQTT_USE_TLS:
+    mqtt_client.tls_set()
+    if MQTT_TLS_INSECURE:
+        mqtt_client.tls_insecure_set(True)
 try:
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
     mqtt_client.loop_start()
@@ -121,13 +170,21 @@ async def listen_to_printer():
     backoff = 1
     while True:
         try:
-            async with websockets.connect(WS_URL, ping_interval=20, ping_timeout=20) as ws:
+            async with websockets.connect(
+                WS_URL,
+                ping_interval=20,
+                ping_timeout=20,
+                max_size=2 ** 20,
+            ) as ws:
                 logging.info("WebSocket connected.")
                 backoff = 1
                 while True:
                     msg = await ws.recv()
                     try:
                         data = json.loads(msg)
+                        if not isinstance(data, dict):
+                            logging.debug("Ignoring non-dict payload: %s", data)
+                            continue
                         full = extract_data(data)
 
                         now = time.monotonic()
