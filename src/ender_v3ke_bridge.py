@@ -3,7 +3,6 @@ import json
 import logging
 import os
 import time
-from typing import Optional
 
 import requests
 import websockets
@@ -64,16 +63,6 @@ logging.basicConfig(
 )
 
 
-def require_secret(value: Optional[str], name: str) -> str:
-    if value:
-        return value
-    logging.critical("Missing required secret %s. Populate it via environment variables or .env.", name)
-    raise SystemExit(1)
-
-
-MQTT_USER = require_secret(MQTT_USER, "MQTT_USER")
-MQTT_PASS = require_secret(MQTT_PASS, "MQTT_PASS")
-
 if PUBLISH_INTERVAL <= 0:
     logging.warning("PUBLISH_INTERVAL must be positive. Falling back to 2 seconds.")
     PUBLISH_INTERVAL = 2
@@ -90,7 +79,12 @@ def on_disconnect(client, userdata, rc):
 
 # Initialize MQTT client
 mqtt_client = mqtt.Client()
-mqtt_client.username_pw_set(MQTT_USER, MQTT_PASS)
+if MQTT_USER and MQTT_PASS:
+    mqtt_client.username_pw_set(MQTT_USER, MQTT_PASS)
+elif MQTT_USER or MQTT_PASS:
+    logging.warning("Both MQTT_USER and MQTT_PASS are required for authenticated connections; proceeding without auth.")
+else:
+    logging.warning("No MQTT credentials supplied; connecting without authentication.")
 mqtt_client.on_connect = on_connect
 mqtt_client.on_disconnect = on_disconnect
 
