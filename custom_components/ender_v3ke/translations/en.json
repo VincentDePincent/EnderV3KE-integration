@@ -1,0 +1,21 @@
+{
+  "title": "Ender V3KE",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Ender V3KE",
+        "description": "Configure the WebSocket bridge and optional MQTT topic.",
+        "data": {
+          "ws_url": "Printer WebSocket URL",
+          "mqtt_topic": "MQTT topic for telemetry",
+          "enable_mqtt": "Publish MQTT telemetry",
+          "snapshot_url": "Snapshot URL",
+          "local_image_path": "Local image save path (relative to config)",
+          "exposed_image_path": "Public image URL (e.g. /local/ender_v3ke/print.png)",
+          "publish_interval": "Minimum seconds between MQTT publishes",
+          "max_image_bytes": "Maximum snapshot size in bytes"
+        }
+      }
+    }
+  }
+}
