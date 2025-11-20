@@ -1,0 +1,5 @@
+{
+  "name": "Ender V3KE Home Assistant Integration",
+  "homeassistant": "2024.4.0",
+  "hacs": "1.32.0"
+}
